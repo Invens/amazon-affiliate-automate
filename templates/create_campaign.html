@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Create Campaign</title>
+</head>
+<body>
+    <h1>Create New Campaign</h1>
+    <form action="/create" method="POST">
+        <label for="campaign_name">Campaign Name:</label>
+        <input type="text" id="campaign_name" name="campaign_name" required><br><br>
+
+        <label for="keywords">Keywords:</label>
+        <input type="text" id="keywords" name="keywords" required><br><br>
+
+        <label for="category">Category:</label>
+        <input type="text" id="category" name="category"><br><br>
+
+        <label for="tag">Tag:</label>
+        <input type="text" id="tag" name="tag"><br><br>
+
+        <label for="interval">Fetch Interval (in minutes):</label>
+        <input type="number" id="intervals" name="intervals" required><br><br>
+
+        <label for="max_posts">Max Posts Per Run:</label>
+        <input type="number" id="max_posts" name="max_posts" required><br><br>
+
+        <label for="total_posts">Total Posts Limit:</label>
+        <input type="number" id="total_posts" name="total_posts" required><br><br>
+
+        <input type="submit" value="Create Campaign">
+    </form>
+</body>
+</html>
