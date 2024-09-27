@@ -11,10 +11,10 @@ campaign_lock = Lock()
 # MySQL connection function
 def get_db_connection():
     return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="",
-        db="campaign_db",
+        host="127.0.0.1",
+        user="campaigndbroot",
+        password="Loginamd@321",
+        db="campaigndb",
         cursorclass=pymysql.cursors.DictCursor
     )
 
