@@ -9,10 +9,10 @@ app = Flask(__name__)
 # MySQL database connection
 def get_db_connection():
     return pymysql.connect(
-        host="localhost",  # Your MySQL host
-        user="root",       # MySQL username
-        password="",  # MySQL password
-        db="campaign_db",  # Database name
+        host="127.0.0.1",  # Your MySQL host
+        user="campaigndbroot",       # MySQL username
+        password="Loginamd@321",  # MySQL password
+        db="campaigndb",  # Database name
         cursorclass=pymysql.cursors.DictCursor
     )
 
