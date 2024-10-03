@@ -1,110 +1,126 @@
 import requests
-from bs4 import BeautifulSoup
-import random
-import time
+import hashlib
+import hmac
+import datetime
+import json
 
-# Replace with your Amazon Affiliate Store ID
-AFFILIATE_ID = "lifelens0f7-21"
+# Replace with your credentials
+AWS_ACCESS_KEY = "AKIAIP44GOIBWVLYSWZA"
+AWS_SECRET_KEY = "0C8w4UrxrfT5U8lG26630DGM3m17XgCuO3dTsviH"
+PARTNER_TAG = "lifelens0f7-21"
+REGION = "us-west-2"  # Use the region for PAAPI for India
+SERVICE = "ProductAdvertisingAPI"
+HOST = "webservices.amazon.in"
+ENDPOINT = "https://webservices.amazon.in/paapi5/searchitems"
+REQUEST_URI = "/paapi5/searchitems"
 
-# Randomize user agents to avoid detection
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
-]
+# Function to sign the request
+def sign(key, msg):
+    return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
 
-# Function to generate affiliate link
-def generate_affiliate_link(product_url):
-    affiliate_link = f"{product_url}?tag={AFFILIATE_ID}"
-    return affiliate_link
+# Function to get the signing key
+def get_signature_key(key, date_stamp, region, service):
+    k_date = sign(('AWS4' + key).encode('utf-8'), date_stamp)
+    k_region = sign(k_date, region)
+    k_service = sign(k_region, service)
+    k_signing = sign(k_service, 'aws4_request')
+    return k_signing
 
-# Function to check if product URL is already in the fetched list
-def is_product_fetched(product_url, fetched_urls):
-    return product_url in fetched_urls
+# Function to create signed headers
+def get_amazon_signed_headers(payload):
+    now = datetime.datetime.utcnow()
+    amz_date = now.strftime('%Y%m%dT%H%M%SZ')
+    date_stamp = now.strftime('%Y%m%d')  # Date without time
 
-# Scrape Amazon for product data
-def scrape_amazon_products(keywords, max_products=5, pages=1, fetched_urls=None):
-    if fetched_urls is None:
-        fetched_urls = set()  # Initialize an empty set if no previous products
+    # Create canonical request
+    canonical_uri = REQUEST_URI
+    canonical_querystring = ''
+    canonical_headers = f'host:{HOST}\nx-amz-date:{amz_date}\n'
+    signed_headers = 'host;x-amz-date'
+    payload_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
+    canonical_request = f'POST\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}'
+
+    # Create string to sign
+    algorithm = 'AWS4-HMAC-SHA256'
+    credential_scope = f'{date_stamp}/{REGION}/{SERVICE}/aws4_request'
+    string_to_sign = f'{algorithm}\n{amz_date}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()}'
+
+    # Create signature
+    signing_key = get_signature_key(AWS_SECRET_KEY, date_stamp, REGION, SERVICE)
+    signature = hmac.new(signing_key, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+
+    # Add signing information to the request
     headers = {
-        "User-Agent": random.choice(USER_AGENTS)
+        'Content-Type': 'application/json',
+        'X-Amz-Date': amz_date,
+        'Authorization': f'{algorithm} Credential={AWS_ACCESS_KEY}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}'
     }
 
-    products = []
-    for page in range(1, pages + 1):
-        search_url = f"https://www.amazon.in/s?k={'+'.join(keywords.split())}&page={page}"
-        
-        try:
-            response = requests.get(search_url, headers=headers)
-            response.raise_for_status()  # Raise an error for bad responses
-            soup = BeautifulSoup(response.content, "html.parser")
+    return headers
 
-            product_listings = soup.find_all("div", {"data-component-type": "s-search-result"}, limit=max_products)
+# Function to search Amazon products
+def search_amazon_products(keywords, max_results=5):
+    # Prepare the payload for the request
+    payload = {
+        "Keywords": keywords,
+        "PartnerTag": PARTNER_TAG,
+        "PartnerType": "Associates",
+        "Marketplace": "www.amazon.in",
+        "Resources": [
+            "Images.Primary.Medium",
+            "ItemInfo.Title",
+            "Offers.Listings.Price"
+        ],
+        "ItemCount": max_results
+    }
+    
+    payload_json = json.dumps(payload)
 
-            for product in product_listings:
-                try:
-                    # Product URL (unique identifier for avoiding duplicates)
-                    product_url = "https://www.amazon.in" + product.h2.a['href']
+    # Get the signed headers for the request
+    headers = get_amazon_signed_headers(payload_json)
 
-                    # Check if the product was already fetched
-                    if is_product_fetched(product_url, fetched_urls):
-                        print(f"Skipping already fetched product: {product_url}")
-                        continue
+    # Make the POST request
+    try:
+        response = requests.post(ENDPOINT, headers=headers, data=payload_json)
 
-                    # Title
-                    title = product.h2.a.text.strip()
-                    
-                    # Generate affiliate link
-                    affiliate_link = generate_affiliate_link(product_url)
+        # Check if the response is successful
+        if response.status_code == 200:
+            data = response.json()
+            # Parse the returned product data
+            products = []
+            if 'ItemsResult' in data and 'Items' in data['ItemsResult']:
+                for item in data['ItemsResult']['Items']:
+                    title = item['ItemInfo']['Title']['DisplayValue']
+                    image_url = item['Images']['Primary']['Medium']['URL']
+                    price = item.get('Offers', {}).get('Listings', [{}])[0].get('Price', {}).get('DisplayAmount', 'Price unavailable')
+                    affiliate_link = item['DetailPageURL']
 
-                    # Image
-                    image_tag = product.find('img')
-                    image_url = image_tag['src'] if image_tag else "Image unavailable"
-
-                    # Price
-                    price_whole = product.find('span', class_='a-price-whole')
-                    price_fraction = product.find('span', class_='a-price-fraction')
-                    price = f"${price_whole.text}{price_fraction.text}" if price_whole and price_fraction else "Check Prices Now"
-
-                    # Append product data if it's not a duplicate
                     products.append({
                         'title': title,
                         'affiliate_link': affiliate_link,
                         'image_url': image_url,
                         'price': price
                     })
+            return products
+        else:
+            print(f"Error: {response.status_code}, {response.text}")
+            return []
 
-                    # Add the product URL to the fetched list
-                    fetched_urls.add(product_url)
-
-                except Exception as e:
-                    print(f"Error parsing product data: {e}")
-                    continue
-
-            # Random delay between requests to avoid bot detection
-            time.sleep(random.uniform(2, 5))
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching the page: {e}")
-            continue
-
-    return products, fetched_urls
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return []
 
 # Example usage
 if __name__ == "__main__":
     keywords = "laptop"
     max_products = 5
-    pages = 2  # Scrape 2 pages
-    
-    # Initialize an empty set to store fetched URLs
-    fetched_urls = set()
-    
-    # First scrape
-    products, fetched_urls = scrape_amazon_products(keywords, max_products, pages, fetched_urls)
-    print("First Scrape Fetched Products:", products)
-    
-    # Simulate a second scrape to check for duplicates
-    products, fetched_urls = scrape_amazon_products(keywords, max_products, pages, fetched_urls)
-    print("Second Scrape Fetched Products:", products)
+    products = search_amazon_products(keywords, max_products)
+
+    # Print fetched products
+    for product in products:
+        print(f"Title: {product['title']}")
+        print(f"Affiliate Link: {product['affiliate_link']}")
+        print(f"Image URL: {product['image_url']}")
+        print(f"Price: {product['price']}")
+        print("\n")
